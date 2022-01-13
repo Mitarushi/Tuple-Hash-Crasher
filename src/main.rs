@@ -150,8 +150,8 @@ fn middle_lane_from_first(first_counter: &RangeCounter) -> u64 {
 
 fn tuple_unhash<F>(length: usize, hash: u64, item_range: &Range<u64>, table_size: usize, printer: F)
     where F: Fn(&Vec<u64>) {
-    let first_half_length = (length - 1) / 2;
-    let second_half_length = length - first_half_length - 1;
+    let second_half_length = (length - 1) / 2;
+    let first_half_length = length - second_half_length - 1;
 
     let mut second_counter = RangeCounter::new(item_range, second_half_length);
 
