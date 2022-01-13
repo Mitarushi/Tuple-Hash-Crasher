@@ -1,6 +1,8 @@
 extern crate clap;
+extern crate fxhash;
 
 use std::ops::Range;
+use fxhash::FxHashMap;
 
 use clap::{App, Arg};
 
@@ -97,34 +99,6 @@ impl<'a> RangeCounter<'a> {
     }
 }
 
-fn lower_bound(vector: &Vec<(u64, u64)>, item: u64) -> usize {
-    let mut low = 0;
-    let mut high = vector.len();
-    while low < high {
-        let mid = (low + high) / 2;
-        if vector[mid].0 < item {
-            low = mid + 1;
-        } else {
-            high = mid;
-        }
-    }
-    low
-}
-
-fn upper_bound(vector: &Vec<(u64, u64)>, item: u64) -> usize {
-    let mut low = 0;
-    let mut high = vector.len();
-    while low < high {
-        let mid = (low + high) / 2;
-        if vector[mid].0 <= item {
-            low = mid + 1;
-        } else {
-            high = mid;
-        }
-    }
-    low
-}
-
 fn middle_lane_from_second(hash_last: u64, second_counter: &RangeCounter) -> u64 {
     let mut acc = hash_last;
 
@@ -150,8 +124,9 @@ fn middle_lane_from_first(first_counter: &RangeCounter) -> u64 {
 
 fn tuple_unhash<F>(length: usize, hash: u64, item_range: &Range<u64>, table_size: usize, printer: F)
     where F: Fn(&Vec<u64>) {
-    let first_half_length = (length - 1) / 2;
-    let second_half_length = length - first_half_length - 1;
+    let second_half_length = (length - 1) / 2;
+    let first_half_length = length - second_half_length - 1;
+    let range_width = item_range.end - item_range.start;
 
     let mut second_counter = RangeCounter::new(item_range, second_half_length);
 
@@ -175,19 +150,60 @@ fn tuple_unhash<F>(length: usize, hash: u64, item_range: &Range<u64>, table_size
 
         table.sort_unstable();
 
+        let mut table_chunk_index = FxHashMap::default();
+        let mut prev_index = (table[0].0 / range_width).wrapping_sub(1);
+        for i in 0..table.len() {
+            let index = table[i].0 / range_width;
+            if index != prev_index {
+                table_chunk_index.insert(index, i);
+                prev_index = index;
+            }
+        }
+
         let mut first_counter = RangeCounter::new(item_range, first_half_length);
         loop {
             let acc = middle_lane_from_first(&first_counter);
 
-            let lower_index = lower_bound(&table, acc.wrapping_add(item_range.start));
-            let upper_index = upper_bound(&table, acc.wrapping_add(item_range.end - 1));
+            let lower = acc.wrapping_add(item_range.start);
+            let upper = acc.wrapping_add(item_range.end);
 
-            let mut index = lower_index;
+            let lower_chunk = lower / range_width;
+            let upper_chunk = upper / range_width;
+
+            let mut index;
+            if let Some(lower_index) = table_chunk_index.get(&lower_chunk) {
+                index = *lower_index;
+            } else {
+                if let Some(lower_index) = table_chunk_index.get(&upper_chunk) {
+                    index = *lower_index;
+                } else {
+                    if first_counter.next() {
+                        break;
+                    }
+                    continue;
+                }
+            }
+
             loop {
-                if index == upper_index {
+                let (lane, counter_index) = table[index];
+
+                let lane_index = lane / range_width;
+                if !(lane_index == lower_chunk || lane_index == upper_chunk) {
                     break;
                 }
-                let (lane, counter_index) = table[index];
+
+                if lower < upper {
+                    if !(lower <= lane && lane < upper) {
+                        index += 1;
+                        continue;
+                    }
+                } else {
+                    if !(lower <= lane || lane < upper) {
+                        index += 1;
+                        continue;
+                    }
+                }
+
                 let mut result = vec![0; length];
 
                 result[0..first_half_length].clone_from_slice(&first_counter.counter);
