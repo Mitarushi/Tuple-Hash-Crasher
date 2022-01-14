@@ -77,7 +77,7 @@ impl<'a> RangeCounter<'a> {
         RangeCounter {
             n,
             range,
-            counter: vec![0; n],
+            counter: vec![range.start; n],
         }
     }
 
@@ -466,7 +466,7 @@ fn main() {
         .arg(Arg::new("old")
             .short('o')
             .long("old")
-            .help("Fro previous version of Python implementation"))
+            .help("For previous version of Python implementation"))
         .arg(Arg::new("format")
             .short('f')
             .long("format")
